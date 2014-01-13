@@ -47,6 +47,9 @@
 #include "TLibCommon/TComPicYuv.h"
 #include "TLibDecoder/TDecTop.h"
 #include "TAppDecCfg.h"
+#include "TLibDecoder/AnnexBread.h"  //(YMK)
+
+#pragma comment (lib,"ws2_32.lib")
 
 //! \ingroup TAppDecoder
 //! \{
@@ -66,6 +69,8 @@ private:
   // for output control
   Bool                            m_abDecFlag[ MAX_GOP ];         ///< decoded flag in one GOP
   Int                             m_iPOCLastDisplay;              ///< last POC in display order
+
+  int							  m_inmode; //(YMK)
   
 public:
   TAppDecTop();

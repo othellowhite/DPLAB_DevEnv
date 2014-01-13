@@ -41,11 +41,123 @@
 #include <stdint.h>
 #include <istream>
 #include <vector>
+#include <winsock2.h>
 
 #include "TLibCommon/TypeDef.h"
 
 //! \ingroup TLibDecoder
 //! \{
+
+
+//(YMK) begin....
+
+
+#define BUFSIZE 1500
+
+class iTCPstream
+{
+public:
+iTCPstream(char * port)
+: m_port(atoi(port))
+{
+}
+
+iTCPstream()
+{
+}
+
+void initialize()
+{
+    totalsize=0;
+	bufsize=0;
+	bufindex=0;
+	m_eof=false;
+
+	if(WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
+	{
+		fprintf(stderr, "\nWSAStartup() error!\n");
+		exit(EXIT_FAILURE);
+	}
+	
+	hServSock=socket(PF_INET, SOCK_STREAM, 0);   
+	if(hServSock == INVALID_SOCKET)
+	{
+		fprintf(stderr, "\nWsocket() error!\n");
+		exit(EXIT_FAILURE);
+	}
+	
+	memset(&servAddr, 0, sizeof(servAddr));
+	servAddr.sin_family=AF_INET;
+	servAddr.sin_addr.s_addr=htonl(INADDR_ANY);
+	servAddr.sin_port=htons(m_port);
+	
+	if( bind(hServSock, (SOCKADDR*) &servAddr, sizeof(servAddr))==SOCKET_ERROR )
+	{
+		fprintf(stderr, "\nbind() error!\n");
+		exit(EXIT_FAILURE);
+	}
+	
+	if( listen(hServSock, 5)==SOCKET_ERROR )
+	{
+		fprintf(stderr, "\nlisten() error!\n");
+		exit(EXIT_FAILURE);
+	}
+	
+	clntAddrSize=sizeof(clntAddr);    
+	hClntSock=accept(hServSock, (SOCKADDR*)&clntAddr,&clntAddrSize);
+	if(hClntSock==INVALID_SOCKET)
+	{
+		fprintf(stderr, "\naccept() error!\n");
+		exit(EXIT_FAILURE);
+	}
+
+	if((totalsize=bufsize=recv(hClntSock, buf, BUFSIZE, 0)) == 0) 
+		m_eof=true;		
+
+	return;
+
+}
+
+char get()
+{
+	if(bufindex<bufsize) 
+		return  buf[bufindex++];
+
+	if((bufsize=recv(hClntSock, buf, BUFSIZE, 0)) != 0) 
+	{
+		totalsize+=bufsize;
+		bufindex=1;
+		return buf[0];
+	}
+	else
+	{
+		m_eof=true;	
+		throw(std::istream::eofbit);
+		return 0;
+	}
+
+}
+
+bool eof()
+{ return m_eof;}
+
+private:
+int m_port;
+WSADATA  wsaData;
+SOCKET   hServSock;
+SOCKET   hClntSock;
+SOCKADDR_IN servAddr;
+SOCKADDR_IN clntAddr;
+int clntAddrSize;
+int totalsize;
+int bufsize;
+int bufindex;
+bool m_eof;
+char buf[BUFSIZE];
+};
+
+//(YMK) end....
+
 
 class InputByteStream
 {
@@ -59,13 +171,16 @@ public:
    *
    * Side-effects: the exception mask of istream is set to eofbit
    */
-  InputByteStream(std::istream& istream)
+	InputByteStream(std::istream& istream, iTCPstream& itcpstream, int mode)
   : m_NumFutureBytes(0)
   , m_FutureBytes(0)
   , m_Input(istream)
+  , m_mode(mode) 
+  , m_inputTCP(itcpstream)
   {
     istream.exceptions(std::istream::eofbit);
   }
+
 
   /**
    * Reset the internal state.  Must be called if input stream is
@@ -92,7 +207,7 @@ public:
     {
       for (UInt i = 0; i < n; i++)
       {
-        m_FutureBytes = (m_FutureBytes << 8) | m_Input.get();
+		  m_FutureBytes = (m_FutureBytes << 8) | ((m_mode==1)?m_Input.get():((m_mode==2)?(unsigned char)m_inputTCP.get():0)); //(YMK)
         m_NumFutureBytes++;
       }
     }
@@ -131,7 +246,7 @@ public:
   {
     if (!m_NumFutureBytes)
     {
-      uint8_t byte = m_Input.get();
+      uint8_t byte = ((m_mode==1)?m_Input.get():((m_mode==2)?(unsigned char)m_inputTCP.get():0)); //(YMK)
       return byte;
     }
     m_NumFutureBytes--;
@@ -156,7 +271,12 @@ public:
 private:
   UInt m_NumFutureBytes; /* number of valid bytes in m_FutureBytes */
   uint32_t m_FutureBytes; /* bytes that have been peeked */
+//  std::istream& m_Input; /* Input stream to read from */
+
   std::istream& m_Input; /* Input stream to read from */
+
+  iTCPstream& m_inputTCP; //(YMK)
+  int m_mode; //(YMK)
 };
 
 /**

@@ -56,7 +56,11 @@ static void convertPayloadToRBSP(vector<uint8_t>& nalUnitBuf, Bool isVclNalUnit)
 
   for (it_read = it_write = nalUnitBuf.begin(); it_read != nalUnitBuf.end(); it_read++, it_write++)
   {
-    assert(zeroCount < 2 || *it_read >= 0x03);
+
+//(YMK) (debug)   if(!(zeroCount < 2 || *it_read >= 0x03)) 
+//(YMK) (debug)	   printf("nalUnitBuf.size()=%d it_read-nalUnitBuf.begin()=%d zeroCount=%d *it_read=%d\n", nalUnitBuf.size(), it_read-nalUnitBuf.begin(), zeroCount, *it_read); //(YMK)
+
+   assert(zeroCount < 2 || *it_read >= 0x03);
     if (zeroCount == 2 && *it_read == 0x03)
     {
       it_read++;
@@ -127,11 +131,12 @@ Void readNalUnitHeader(InputNALUnit& nalu)
  * create a NALunit structure with given header values and storage for
  * a bitstream
  */
-void read(InputNALUnit& nalu, vector<uint8_t>& nalUnitBuf)
+void read(InputNALUnit& nalu, vector<uint8_t>& nalUnitBuf, bool bHaveNAL)  //(YMK)
 {
   /* perform anti-emulation prevention */
   TComInputBitstream *pcBitstream = new TComInputBitstream(NULL);
-  convertPayloadToRBSP(nalUnitBuf, (nalUnitBuf[0] & 64) == 0);
+  
+  if (!bHaveNAL) convertPayloadToRBSP(nalUnitBuf, (nalUnitBuf[0] & 64) == 0);  //(YMK)
   
   nalu.m_Bitstream = new TComInputBitstream(&nalUnitBuf);
   delete pcBitstream;

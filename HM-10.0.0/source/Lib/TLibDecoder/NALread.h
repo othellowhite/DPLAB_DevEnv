@@ -57,6 +57,6 @@ struct InputNALUnit : public NALUnit
   TComInputBitstream* m_Bitstream;
 };
 
-void read(InputNALUnit& nalu, std::vector<uint8_t>& nalUnitBuf);
+void read(InputNALUnit& nalu, std::vector<uint8_t>& nalUnitBuf, bool bHaveNAL);  //(YMK)
 
 //! \}

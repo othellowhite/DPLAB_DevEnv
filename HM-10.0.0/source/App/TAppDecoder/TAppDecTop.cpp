@@ -92,15 +92,33 @@ Void TAppDecTop::decode()
 {
   Int                 poc;
   TComList<TComPic*>* pcListPic = NULL;
+  bool eof;  //(YMK)
 
+
+  // (Yoon)	여길 스위치-케이스로 바꿔보자 !!
+  //		파싱도 하고 인풋유디피스트림도 만들어보고 이것도 해보고 저것도 해보고,\
+
+
+
+  m_inmode = 1; //(YMK) file input mode
+  //m_inmode = 2; //(YMK) TCP server input mode
+  char * port = "9190"; //(YMK)
+
+  // (Yoon)	여기까지 !!
+
+  // (YMK)  begin....
   ifstream bitstreamFile(m_pchBitstreamFile, ifstream::in | ifstream::binary);
-  if (!bitstreamFile)
+  iTCPstream bitstreamTCP(port);
+  if(m_inmode==2) bitstreamTCP.initialize();
+  InputByteStream bytestream(bitstreamFile, bitstreamTCP, m_inmode);
+  //(YMK) end....
+
+  if (eof=(m_inmode==1)?bitstreamFile.eof():((m_inmode==2)?(bitstreamTCP.eof()):true)) //(YMK)
   {
     fprintf(stderr, "\nfailed to open bitstream file `%s' for reading\n", m_pchBitstreamFile);
     exit(EXIT_FAILURE);
   }
 
-  InputByteStream bytestream(bitstreamFile);
 
   // create & initialize internal classes
   xCreateDecLib();
@@ -110,19 +128,33 @@ Void TAppDecTop::decode()
   // main decoder loop
   Bool recon_opened = false; // reconstruction file not yet opened. (must be performed after SPS is seen)
 
-  while (!!bitstreamFile)
+  Bool bHaveNAL = false;  //(YMK)
+  vector<uint8_t> nalUnit; //(YMK)
+  AnnexBStats stats = AnnexBStats(); //(YMK)
+
+  while (!eof)  //(YMK)
   {
     /* location serves to work around a design fault in the decoder, whereby
      * the process of reading a new slice that is the first slice of a new frame
      * requires the TDecTop::decode() method to be called again with the same
      * nal unit. */
-    streampos location = bitstreamFile.tellg();
-    AnnexBStats stats = AnnexBStats();
+
+//(YMK)    streampos location = bitstreamFile.tellg();
+//(YMK)    AnnexBStats stats = AnnexBStats();
+
     Bool bPreviousPictureDecoded = false;
 
-    vector<uint8_t> nalUnit;
+//(YMK)    vector<uint8_t> nalUnit;
     InputNALUnit nalu;
-    byteStreamNALUnit(bytestream, nalUnit, stats);
+
+//(YMK) begin....
+	if(!bHaveNAL) 
+	{
+		nalUnit.resize(0); 
+		memset(&stats, 0, sizeof(AnnexBStats));
+		byteStreamNALUnit(bytestream, nalUnit, stats);
+	}  
+//(YMK) end....
 
     // call actual decoding function
     Bool bNewPicture = false;
@@ -137,7 +169,9 @@ Void TAppDecTop::decode()
     }
     else
     {
-      read(nalu, nalUnit);
+      read(nalu, nalUnit, bHaveNAL); //(YMK)
+      bHaveNAL=false; //(YMK)
+
       if( (m_iMaxTemporalLayer >= 0 && nalu.m_temporalId > m_iMaxTemporalLayer) || !isNaluWithinTargetDecLayerIdSet(&nalu)  )
       {
         if(bPreviousPictureDecoded)
@@ -155,18 +189,23 @@ Void TAppDecTop::decode()
         bNewPicture = m_cTDecTop.decode(nalu, m_iSkipFrame, m_iPOCLastDisplay);
         if (bNewPicture)
         {
-          bitstreamFile.clear();
+          //(YMK) bitstreamFile.clear();
+
           /* location points to the current nalunit payload[1] due to the
            * need for the annexB parser to read three extra bytes.
            * [1] except for the first NAL unit in the file
            *     (but bNewPicture doesn't happen then) */
-          bitstreamFile.seekg(location-streamoff(3));
-          bytestream.reset();
+
+          //(YMK) bitstreamFile.seekg(location-streamoff(3));
+
+          //(YMK) bytestream.reset();
+
+		  bHaveNAL = true; //(YMK)
         }
         bPreviousPictureDecoded = true; 
       }
     }
-    if (bNewPicture || !bitstreamFile)
+    if (bNewPicture || (eof=(m_inmode==1)?bitstreamFile.eof():((m_inmode==2)?(bitstreamTCP.eof()):true)))  //(YMK)
     {
       m_cTDecTop.executeLoopFilters(poc, pcListPic);
     }

@@ -45,7 +45,27 @@
 #include "TLibCommon/TComRom.h"
 #include "TVideoIOYuv.h"
 
+#pragma comment (lib,"ws2_32.lib")
+#include <WinSock2.h>
+
 using namespace std;
+
+// (Yoon) begin ....
+
+//////addition//////
+static int sock;
+static struct sockaddr_in servAddr;
+static int mode;
+static WSADATA wsaData;
+
+void ErrorHandling(char *message) {
+	fputs(message, stderr);
+	fputc('\n', stderr);
+	exit(1);
+}
+////////////////////
+
+// (Yoon) end ....
 
 /**
  * Perform division with rounding of all pixels in img by
@@ -157,29 +177,112 @@ Void TVideoIOYuv::open( Char* pchFile, Bool bWriteMode, Int fileBitDepthY, Int f
   m_bitDepthShiftC = internalBitDepthC - fileBitDepthC;
   m_fileBitDepthY = fileBitDepthY;
   m_fileBitDepthC = fileBitDepthC;
+	string my_Arg_Type, my_Arg_Addr, my_Arg_Port;	
 
-  if ( bWriteMode )
-  {
-    m_cHandle.open( pchFile, ios::binary | ios::out );
-    
-    if( m_cHandle.fail() )
-    {
-      printf("\nfailed to write reconstructed YUV file\n");
-      exit(0);
-    }
-  }
-  else
-  {
-    m_cHandle.open( pchFile, ios::binary | ios::in );
-    
-    if( m_cHandle.fail() )
-    {
-      printf("\nfailed to open Input YUV file\n");
-      exit(0);
-    }
-  }
-  
-  return;
+// (Yoon) begin ....
+
+//////addition//////
+
+	// @ TCP/UDPtype Parsing
+	int my_Cnt = 0;
+	int my_isFile = false;
+	while( !(pchFile[my_Cnt]==':' || pchFile[my_Cnt]=='.') )
+		my_Arg_Type.append(1,pchFile[my_Cnt++]);
+
+	if(!strcmp(my_Arg_Type.c_str(), "tcp")) {
+		printf("\n$ tcp type -> ");
+		mode = 2;
+	}
+	else if (!strcmp(my_Arg_Type.c_str(), "udp")) {
+		printf("\n$ udp type -> ");
+		mode = 3;
+	}
+	else {
+		printf("\n$ file stream -> ");
+		my_isFile = true;
+		mode = 1;
+	}
+
+	// @ IPv4_ADDR Parsing (test : 127.0.0.1)
+
+	my_Cnt += 3;
+	while(pchFile[my_Cnt]!=':'&& my_isFile==false )
+		my_Arg_Addr.append(1,pchFile[my_Cnt++]);
+	printf("%s : ", my_Arg_Addr.c_str());
+
+	// @ Port Parsing	(test : 9190)
+	my_Cnt++;
+	while(pchFile[my_Cnt]!=0&& my_isFile==false)
+		my_Arg_Port.append(1,pchFile[my_Cnt++]);
+	printf("%s\n", my_Arg_Port.c_str());	
+
+	// ~~~ Parsing end
+	switch(mode) {	
+
+
+	case 3:	// @@ UDP @@
+		if(WSAStartup(MAKEWORD(2,2),&wsaData)!=0)
+			ErrorHandling("WSAstartup() error!");
+
+		sock=socket(PF_INET,SOCK_DGRAM,IPPROTO_UDP);
+
+		if(sock==INVALID_SOCKET)
+			ErrorHandling("UDP_socket() error");
+
+		memset(&servAddr,0,sizeof(servAddr));
+
+		servAddr.sin_family=AF_INET;
+
+		servAddr.sin_addr.s_addr=inet_addr(my_Arg_Addr.c_str());
+		//inet_addr function : change string->ip_addr_number
+
+		servAddr.sin_port=htons(atoi(my_Arg_Port.c_str()));
+
+		if(connect(sock,(SOCKADDR*)&servAddr,sizeof(servAddr))==SOCKET_ERROR)
+			//bind to server
+			ErrorHandling("Connect() error!");
+
+		break;
+	case 2:	// @@ TCP @@
+		if(WSAStartup(MAKEWORD(2,2),&wsaData)!=0)
+			ErrorHandling("WSAstartup() error!");
+
+		sock=socket(PF_INET,SOCK_STREAM,0);
+
+		if(sock==INVALID_SOCKET)
+			ErrorHandling("UDP_socket() error");
+
+		memset(&servAddr,0,sizeof(servAddr));
+
+		servAddr.sin_family=AF_INET;
+
+		servAddr.sin_addr.s_addr=inet_addr(my_Arg_Addr.c_str());//inet_addr function : change string->ip_addr_number
+
+		servAddr.sin_port=htons(atoi(my_Arg_Port.c_str()));
+
+		if(connect(sock,(SOCKADDR*)&servAddr,sizeof(servAddr))==SOCKET_ERROR)//bind to server
+			ErrorHandling("Connect() error!");
+
+		break;
+	case 1 : // @@ File Stream @@
+
+		m_cHandle.open( pchFile, ios::binary | ios::out );
+
+		if( bWriteMode && m_cHandle.fail() ) {
+			printf("\nfailed to write reconstructed YUV file\n");
+			exit(0);
+		}
+		else if (m_cHandle.fail() ) {
+			printf("\nfailed to open Input YUV file\n");
+			exit(0);
+		}
+	}
+	
+////////////////////
+
+// (Yoon) end ....
+
+	return;
 }
 
 Void TVideoIOYuv::close()
@@ -326,7 +429,26 @@ static Bool writePlane(ostream& fd, Pel* src, Bool is16bit,
       }
     }
 
-    fd.write(reinterpret_cast<Char*>(buf), write_len);
+// (Yoon) begin ....
+
+//////addition//////
+
+		switch(mode) { 
+		case 3: // @@ UDP @@
+			sendto(sock,(const char*)buf,write_len,0,(SOCKADDR*)&servAddr,sizeof(servAddr));
+			Sleep(10);
+			break;
+		case 2: // @@ TCP @@
+			send(sock, (const char *) buf, write_len,0);
+			break;
+
+////////////////////
+
+// (Yoon) end ....
+		case 1: // @@ File Stream @@
+
+			fd.write(reinterpret_cast<Char*>(buf), write_len);
+		}
     if (fd.eof() || fd.fail() )
     {
       delete[] buf;

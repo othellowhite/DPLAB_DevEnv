@@ -168,6 +168,7 @@ byteStreamNALUnit(
     eof = true;
   }
   stats.m_numBytesInNALUnit = UInt(nalUnit.size());
+
   return eof;
 }
 //! \}
